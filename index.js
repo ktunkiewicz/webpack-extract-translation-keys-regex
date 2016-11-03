@@ -1,5 +1,6 @@
 /*!
- Copyright 2015 Dmitriy Kubyshkin
+ Copyright 2016 Kamil Tunkiewicz
+ based on Dmitriy Kubyshkin work
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -16,79 +17,187 @@
 
 'use strict';
 
-var DynamicTranslationKeyError = require('./DynamicTranslationKeyError');
-var NoTranslationKeyError = require('./NoTranslationKeyError');
-var ConstDependency = require('webpack/lib/dependencies/ConstDependency');
-var NullFactory = require('webpack/lib/NullFactory');
 var KeyGenerator = require('./key-generator');
+var fs = require('fs');
 
 /**
- * @param {Object} options
+ * @param {Object<string,string|RegExp>} options
  * @constructor
  */
-function ExtractTranslationPlugin(options) {
+function ExtractTranslationRegexPlugin(options) {
     options = options || {};
-    this.functionName = options.functionName || '__';
+    if (options.functionPattern && !options.functionReplace) {
+        throw new Error("ExtractTranslationRegexPlugin: If you provide functionPattern, you must provide functionReplace");
+    }
+    this.functionPattern = options.functionPattern || /gettext\(\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)(")|'([^'\\]*(?:\\.[^'\\]*)*)('))/gm;
+    this.functionReplace = options.functionReplace || 'gettext($2$1$2';
+    this.groupIndex = 1;
     this.done = options.done || function () {};
     this.output = typeof options.output === 'string' ? options.output : false;
-    this.mangleKeys = options.mangle || false;
+    this.mangle = options.mangle || false;
+    this.moduleFilter = options.moduleFilter || [ /((?:[^!?\s]+?)(?:\.js|\.jsx|\.ts))$/, /^((?!node_modules).)*$/ ]
 }
 
-ExtractTranslationPlugin.prototype.apply = function(compiler) {
-    var mangleKeys = this.mangleKeys;
-    var keys = this.keys = Object.create(null);
-    var generator = KeyGenerator.create();
-
-    compiler.parser.plugin('call ' + this.functionName, function(expr) {
-        var key;
-        if (!expr.arguments.length) {
-            this.state.module.errors.push(
-                new NoTranslationKeyError(this.state.module, expr)
-            );
-            return false;
-        }
-
-        key = this.evaluateExpression(expr.arguments[0]);
-        if (!key.isString()) {
-            this.state.module.errors.push(
-                new DynamicTranslationKeyError(this.state.module, expr)
-            );
-            return false;
-        }
-
-        key = key.string;
-
-        var value = expr.arguments[0].value;
-
-        if (!(key in keys)) {
-            if (mangleKeys) {
-                value = generator.next().value;
-            }
-            keys[key] = value;
-        }
-
-        if (mangleKeys) {
-            // This replaces the original string with the new string
-            var dep = new ConstDependency(JSON.stringify(keys[key]), expr.arguments[0].range);
-            dep.loc = expr.arguments[0].loc;
-            this.state.current.addDependency(dep);
-        }
-
-        return false;
-    });
-
-    compiler.plugin('done', function() {
-        this.done(this.keys);
-        if (this.output) {
-            require('fs').writeFileSync(this.output, JSON.stringify(this.keys));
-        }
-    }.bind(this));
+ExtractTranslationRegexPlugin.prototype.apply = function(compiler) {
+    this.keys = Object.create(null);
+    this.generator = KeyGenerator.create();
 
     compiler.plugin('compilation', function(compilation) {
-        compilation.dependencyFactories.set(ConstDependency, new NullFactory());
-        compilation.dependencyTemplates.set(ConstDependency, new ConstDependency.Template());
-    });
 
+        // plug into the process after all chunks are splitted and optimized, but before minification is done
+        compilation.plugin('optimize-chunks', function(chunks, records) {
+            for (var chunk_id in chunks) {
+                var chunk = chunks[chunk_id];
+                for (var module_id in chunk.modules) {
+                  var module = chunk.modules[module_id];
+
+                    // work only with modules that match the moduleFilter rules
+                    if (module.userRequest && filterModule(module.userRequest, this.moduleFilter)) {
+                        var source = module._source._value;
+                        var regex = ensureRegExp(this.functionPattern);
+
+                        // iterating keys found in module
+                        var match;
+                        while ((match = regex.exec(source)) !== null) {
+                            if (!match[this.groupIndex]) {
+                                compilation.errors.push(
+                                    new Error("ExtractTranslationRegexPlugin: The provided `functionPattern` regular expression do not contain capture block. Please check your webpack.config.js file.")
+                                );
+                                return false;
+                            }
+
+                            var original = match[0];
+                            var value = match[this.groupIndex];
+                            var key = value;
+
+                            // saving translation key per module
+                            if (!this.keys[chunk.name]) { this.keys[chunk.name] = {}; }
+                            if (!(value in this.keys[chunk.name])) {
+                                if (this.mangle) {
+                                    key = this.generator.next().value;
+                                }
+                                this.keys[chunk.name][value] = key;
+                            }
+
+                            // replacing keys in source
+                            if (this.mangle) {
+                                // build the replacement with new (mangled) key
+                                var replacement = this.functionReplace;
+                                var tmpMatch = match;
+                                tmpMatch[this.groupIndex] = key;
+                                for (var i = 1; i < tmpMatch.length; i++) {
+                                    replacement = replacement.replace(new RegExp('\$' + i, 'g'), tmpMatch[i])
+                                }
+                                source = source.replace(
+                                    new RegExp(sanitizeForRegexp(original), 'gm'),
+                                    this.functionReplace
+                                );
+                            }
+                        }
+
+                        module._source._value = source;
+                    }
+                }
+            }
+
+            // after we are done, this.keys is flipped from value:key to key:value
+            for (var chunkName in this.keys) {
+                this.keys[chunkName] = flipObject(this.keys[chunkName]);
+            }
+
+            return false;
+        }.bind(this));
+    }.bind(this));
+
+    compiler.plugin('done', function(stats) {
+        this.done(this.keys, stats);
+        if (this.output) {
+            this.output = this.output.replace('[child]', stats.compilation.compiler.name);
+            if (!this.output.match(/\[chunk]/)) {
+
+                // single file output mode - merging keys from all chunks together
+                var output = {};
+                for (var i in this.keys) {
+                    output = Object.assign(output, this.keys[i]);
+                }
+                fs.writeFileSync(this.output, JSON.stringify(output, null, 2));
+            } else {
+
+                // multiple files output mode
+                for (var chunkName in this.keys) {
+                    var safeChunkName = chunkName.replace(/[^a-z0-9.\-_]+/gi, '-');
+                    var filename = this.output.replace('[chunk]', safeChunkName);
+                    fs.writeFileSync(filename, JSON.stringify(this.keys[chunkName], null, 2));
+                }
+            }
+        }
+    }.bind(this));
 };
 
-module.exports = ExtractTranslationPlugin;
+/**
+ * Filter module request using regular expression or array of regular expressions.
+ * An array of regular expressions is matched one after another and if any of them returns no match, the function
+ * returns false. If all of them matched - it returns true.
+ * The input for regexp matching is always a last matched group from previous expression. So you can combine regular
+ * expressions in a chain.
+ *
+ * @param {string} moduleRequest
+ * @param {Array<RegExp>} moduleFilter
+ * @returns {boolean}
+ */
+var filterModule = function (moduleRequest, moduleFilter) {
+    for (var i in moduleFilter) {
+        var matches = moduleRequest.match(moduleFilter[i]);
+        if (matches === null) {
+            return false;
+        }
+        moduleRequest = matches[matches.length-1];
+    }
+    return true;
+};
+
+/**
+ * Ensures that provided rules are regexp with "g" and "m" modifier added.
+ * If string provided - builds regexp from it.
+ *
+ * @param {RegExp|string} regexp
+ * @return {RegExp}
+ */
+var ensureRegExp = function (regexp) {
+    if (typeof regexp == 'string') {
+        return new RegExp(sanitizeForRegexp(regexp), 'gm')
+    } else {
+        var flags = regexp.flags;
+        if (flags.indexOf('g') === -1) { flags += 'g'; }
+        if (flags.indexOf('m') === -1) { flags += 'm'; }
+        return new RegExp(regexp.source, flags);
+    }
+}
+
+/**
+ * Sanitizes string to be used in regexp match
+ *
+ * @param {string} regexpString
+ * @returns {string}
+ */
+var sanitizeForRegexp = function (regexpString) {
+    return regexpString.replace(/[\-\[\]\/{}()*+?.\\\^$|]/g, "\\$&");
+}
+
+/**
+ * Returns an object with values flipped with keys
+ *
+ * @param Object<string.string> obj
+ * @returns Object<string.string>
+ */
+var flipObject = function (obj) {
+    var newObj = {};
+    for (var prop in obj) {
+        if(obj.hasOwnProperty(prop)) {
+            newObj[obj[prop]] = prop;
+        }
+    }
+    return newObj;
+};
+
+module.exports = ExtractTranslationRegexPlugin;

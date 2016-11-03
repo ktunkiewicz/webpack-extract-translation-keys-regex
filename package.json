@@ -1,34 +1,20 @@
 {
-  "name": "webpack-extract-translation-keys-plugin",
-  "version": "2.0.4",
-  "description": "Webpack plugin to extract list of used translation keys from included modules.",
+  "name": "webpack-extract-translation-keys-regex-plugin",
+  "version": "1.0.0",
+  "description": "Webpack plugin to extract list of used translation keys from included modules, using regular expressions.",
   "main": "index.js",
-  "scripts": {
-    "prepublish": "npm run lint && npm test",
-    "lint": "eslint .",
-    "test": "mocha --harmony test",
-    "tdd": "mocha --harmony --watch test"
-  },
   "files": [
     "index.js",
-    "DynamicTranslationKeyError.js",
-    "key-generator.js",
-    "NoTranslationKeyError.js"
+    "key-generator.js"
   ],
   "repository": {
     "type": "git",
-    "url": "ssh://git@github.com:grassator/webpack-extract-translation-keys.git"
+    "url": "ssh://git@github.com:ktunkiewicz/webpack-extract-translation-keys-regex.git"
   },
   "keywords": [
     "webpack",
     "webpack-plugin"
   ],
-  "author": "Dmitriy Kubyshkin <grassator@gmail.com>",
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "bondjs": "^1.2.2",
-    "eslint": "^0.21.2",
-    "mocha": "^2.2.5",
-    "webpack": "1.13.1"
-  }
+  "author": "Kamil Tunkiewicz <kamil.tunkiewicz@gmail.com>",
+  "license": "Apache-2.0"
 }

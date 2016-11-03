@@ -2,9 +2,9 @@
 
 const alphabet = [];
 
-for (var i = 32; i < 127; ++i) {
-    // Remove the characters that require escaping
-    if (i !== 34 && i !== 39 && i !== 92) {
+for (var i = 48; i <= 122; ++i) {
+    // Only allow alphanumeric characters
+    if (!(i >= 58 && i <= 64) && !(i >= 91 && i <= 96)) {
         alphabet.push(String.fromCharCode(i));
     }
 }
