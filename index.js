@@ -26,16 +26,20 @@ var fs = require('fs');
  */
 function ExtractTranslationRegexPlugin(options) {
     options = options || {};
-    if (options.functionPattern && !options.functionReplace) {
-        throw new Error("ExtractTranslationRegexPlugin: If you provide functionPattern, you must provide functionReplace");
-    }
     this.functionPattern = options.functionPattern || /gettext\(\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)(")|'([^'\\]*(?:\\.[^'\\]*)*)('))/gm;
-    this.functionReplace = options.functionReplace || 'gettext($2$1$2';
-    this.groupIndex = 1;
+    this.functionReplace = options.functionReplace || 'gettext($2$4$1$3$2$4';
+    this.groupIndex = options.groupIndex || [ 1, 3 ];
     this.done = options.done || function () {};
     this.output = typeof options.output === 'string' ? options.output : false;
     this.mangle = options.mangle || false;
     this.moduleFilter = options.moduleFilter || [ /((?:[^!?\s]+?)(?:\.js|\.jsx|\.ts))$/, /^((?!node_modules).)*$/ ]
+
+    if (options.functionPattern && !options.functionReplace) {
+        throw new Error("ExtractTranslationRegexPlugin: If you provide functionPattern, you must provide functionReplace");
+    }
+    if (typeof this.groupIndex !== 'object') {
+        this.groupIndex = [ this.groupIndex ];
+    }
 }
 
 ExtractTranslationRegexPlugin.prototype.apply = function(compiler) {
@@ -59,7 +63,8 @@ ExtractTranslationRegexPlugin.prototype.apply = function(compiler) {
                         // iterating keys found in module
                         var match;
                         while ((match = regex.exec(source)) !== null) {
-                            if (!match[this.groupIndex]) {
+                            var keyIndex = getKeyIndexFromMatch(match, this.groupIndex);
+                            if (keyIndex === -1) {
                                 compilation.errors.push(
                                     new Error("ExtractTranslationRegexPlugin: The provided `functionPattern` regular expression do not contain capture block. Please check your webpack.config.js file.")
                                 );
@@ -67,7 +72,7 @@ ExtractTranslationRegexPlugin.prototype.apply = function(compiler) {
                             }
 
                             var original = match[0];
-                            var value = match[this.groupIndex];
+                            var value = match[keyIndex];
                             var key = value;
 
                             // saving translation key per module
@@ -83,14 +88,25 @@ ExtractTranslationRegexPlugin.prototype.apply = function(compiler) {
                             if (this.mangle) {
                                 // build the replacement with new (mangled) key
                                 var replacement = this.functionReplace;
-                                var tmpMatch = match;
-                                tmpMatch[this.groupIndex] = key;
+                                var tmpMatch = match.slice(0);
                                 for (var i = 1; i < tmpMatch.length; i++) {
-                                    replacement = replacement.replace(new RegExp('\$' + i, 'g'), tmpMatch[i])
+                                    if (typeof tmpMatch[i] == 'undefined') {
+                                        tmpMatch[i] = '';
+                                    } else {
+                                        // if the match is translation key
+                                        if (this.groupIndex.indexOf(i) !== -1) {
+                                            if (i == keyIndex) {
+                                                tmpMatch[i] = key;
+                                            } else {
+                                                tmpMatch[i] = '';
+                                            }
+                                        }
+                                    }
+                                    replacement = replacement.replace(new RegExp('\\$' + i, 'g'), tmpMatch[i])
                                 }
                                 source = source.replace(
                                     new RegExp(sanitizeForRegexp(original), 'gm'),
-                                    this.functionReplace
+                                    replacement
                                 );
                             }
                         }
@@ -198,6 +214,22 @@ var flipObject = function (obj) {
         }
     }
     return newObj;
+};
+
+/**
+ * Gets translation key from match according to `groupIndex` data
+ * @param {Array} match
+ * @param {Array} groupIndex
+ * @returns {int}
+ */
+var getKeyIndexFromMatch = function(match, groupIndex) {
+    for (var i in groupIndex) {
+        var index = groupIndex[i];
+        if (match[index]) {
+            return index;
+        }
+    }
+    return -1;
 };
 
 module.exports = ExtractTranslationRegexPlugin;

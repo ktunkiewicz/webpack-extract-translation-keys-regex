@@ -1,6 +1,6 @@
 # Webpack Extract Translation Keys Plugin (Regex version)
 
-> This plugin was inspired by [webpack-extract-translation-keys](https://github.com/grassator/webpack-extract-translation-keys). It works in a completely different way, but it shares the concept and some of the source code, so I leave the original copyright info in files.  
+> This plugin is based on [webpack-extract-translation-keys](https://github.com/grassator/webpack-extract-translation-keys). It works in a completely different way, but it shares the concept and some of the source code, so I leave the original copyright info in files.  
   
 Webpack provides an official plugin for managing translation using [i18n-webpack-plugin](https://github.com/webpack/i18n-webpack-plugin), but in only allows for build-time translations by replacing strings in the source code.
 
@@ -121,14 +121,19 @@ Default value: `/gettext\(\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)(")|'([^'\\]*(?:\\.[^'\
 
 This should be a regular expression object or simply a string. Plugin will internally enforce "g" and "m" flags on the provided regexp.
  
-The expression must have at least one outputting group block. By default the first group block one is considered to be the translation key.
+The expression must have at least one outputting group block.
+
+By default the first and third group block one is considered to be the translation key. That's because of the default `functionPattern` that matches two versions of `gettext` - with `"` and `'` quotes used.
+
 You can change this to be any block by modifying the `groupIndex` option.
 
 #### - `groupIndex`
 
-Default value: 1
+Default value: [1, 3]
 
-Specifies which group block from `functionPattern` contains the translation key. 
+Specifies which group block from `functionPattern` contains the translation key. This can be integer or array of integers.
+ 
+If multiple indexes are provided - the first group which returns a value will be used. At least one group must return value unless plugin will throw an error.  
 
 #### - `moduleFilter`
 
@@ -247,9 +252,11 @@ Enables mangling of translation keys. When enabled the `functionReplace` option 
 
 #### - `functionReplace`
 
-Default value: `gettext($2$1$2`
+Default value: `gettext($2$4$1$3$2$4`
 
 This option specifies the replacement for the `functionPattern` when mangling translation keys. It is required if you use mangling.
+
+Please note that if some group returns `undefined` it is changed to empty string, so you can easily use output from multiple groups even if they don't match anything in the string.  
 
 You can also use this option to change the function name if you like to.
 

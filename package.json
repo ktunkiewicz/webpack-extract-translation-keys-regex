@@ -1,6 +1,6 @@
 {
   "name": "webpack-extract-translation-keys-regex-plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Webpack plugin to extract list of used translation keys from included modules, using regular expressions.",
   "main": "index.js",
   "files": [
