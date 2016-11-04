@@ -95,7 +95,7 @@ In some applications translation keys are quite long, so for the situations wher
     plugins: [
         new extractTranslationKeysRegexPlugin({
             functionPattern: /intl\.formatMessage\(\s*{\s*id:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)(")|'([^'\\]*(?:\\.[^'\\]*)*)('))/gm,
-            functionReplace: 'intl.formatMessage({id:$2$1$2',
+            functionReplace: 'intl.formatMessage({id:$2$4$1$3$2$4',
             mangle: true,
             output: path.join(PATHS.build, 'translation-keys.json')
         })
