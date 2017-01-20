@@ -82,13 +82,9 @@ If you run `webpack` now, you should get `dist/translation-keys.json` file with 
 }
 ```
 
-It may seems like a waste to output a map with the keys and values being the same thing, the purpose is to keep the output format consistent with the times when the `mangle` option is enabled.
-
-> **WARNING:** the format of the output without mangling has changed from array to a map since version 2.x. If you want to have old behavior, you can implement it using `done` callback option.
-
 ### Key Mangling
 
-In some applications translation keys are quite long, so for the situations where you want to save some additional bytes in your application, you can enable mangling during the plugin initialization:
+It may seems like a waste to output to create a map with keys and values being the same thing. So in order to reduce code size, you can enable mangling during the plugin initialization:
 
 ```js
 // ...
@@ -133,7 +129,7 @@ Default value: [1, 3]
 
 Specifies which group block from `functionPattern` contains the translation key. This can be integer or array of integers.
  
-If multiple indexes are provided - the first group which returns a value will be used. At least one group must return value unless plugin will throw an error.  
+If multiple indexes are provided - the first group which returns a **nonempty** value will be used. At least one group must return value unless plugin will throw an error.  
 
 #### - `moduleFilter`
 
