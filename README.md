@@ -15,7 +15,7 @@ This plugin works directly on bundle's source code by searching (and optionally 
 This approach has some advantages against using the webpack's parser very limited api. It can find the translation key anywhere in the bundle code. This comes with some small drawback, which may limit the use to particular use cases.
 
 Pros:
-- It finds translation keys everywhere, not only withing pure function calls. For example, the webpack parser cannot find translation key in this structure:   
+- It finds translation keys everywhere, not only within pure function calls. For example, the webpack parser cannot find translation key in this structure:   
 ```
 some_function_call(
   intl.translate("some key)
